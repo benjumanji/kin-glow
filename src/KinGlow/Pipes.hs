@@ -14,8 +14,8 @@ import System.IO (Handle)
 import Text.Gedcom.Types
 import qualified Text.Gedcom.Parser as Parser
 
-gedcom :: Handle -> Producer Gedcom IO ()
+gedcom :: MonadIO m => Handle -> Producer Gedcom m ()
 gedcom = gedcomPipe . PB.fromHandle 
 
-gedcomPipe :: Producer ByteString IO () -> Producer Gedcom IO ()
+gedcomPipe :: Monad m => Producer ByteString m () -> Producer Gedcom m ()
 gedcomPipe p = () <$ parseMany Parser.gedcom p >-> P.map snd 

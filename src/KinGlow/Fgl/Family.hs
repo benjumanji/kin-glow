@@ -1,38 +1,53 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections, OverloadedStrings #-}
 
 module KinGlow.Fgl.Family
-  (insert, famEdges)
+  (update)
   where
 
 import Control.Applicative
-import Control.Monad
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as C8
-import Data.Graph.Inductive
-import Data.Maybe (mapMaybe, catMaybes, fromMaybe)
-import Text.Gedcom.Types
+import Data.Monoid
+import Data.Graph.Inductive.Graph
+import Text.Gedcom.Types hiding (marriage)
 import KinGlow.Fgl.Types
 
 
-insert :: DynGraph gr => KinGraph gr -> Gedcom -> KinGraph gr
-insert gr record = insEdges (famEdges record) gr
-
-famEdges :: Gedcom -> [LEdge RelType]
-famEdges (Gedcom _ _ tree) = fedges
+-- | update the graph with this families relationships
+update :: (Monad m, Applicative m, DynGraph gr)
+       => KinGraph gr              -- ^ the current geneology
+       -> Gedcom                   -- ^ a record to add
+       -> KinGlowT m (KinGraph gr) -- ^ updated geneology
+update gr (Gedcom _ _ tree) = gr'
   where
     tree' = rewriteTyped tree
-    getRef g = (fst <$>) . ((C8.readInt . C8.tail) <=< g)
-    w = getRef wife tree'
-    h = getRef husb tree'
-    cs = mapMaybe ((fst <$>) . C8.readInt . C8.tail) (children tree')
-    marriagee = marriageEdge <$> h <*> w
-    childhes = fromMaybe [] $ childEdges <$> h <*> pure cs 
-    childwes = fromMaybe [] $ childEdges <$> w <*> pure cs
-    childes = childhes ++ childwes
-    fedges = maybe childes (:childes) marriagee
+    mw = wife tree'
+    mh = husb tree'
+    cs = children tree'
+    gr' = case (mw,mh) of
+              (Just w, Just h) -> (& gr) <$> marriage h w cs
+              (Just w, _)      -> (flip insEdges gr) <$> (singleParent w cs)
+              (_, Just h)      -> (flip insEdges gr) <$> (singleParent h cs)
+              _                -> pure gr
 
-marriageEdge :: Int -> Int -> LEdge RelType
-marriageEdge i1 i2 = (i1,i2,Married)
-
-childEdges :: Int -> [Int] -> [LEdge RelType]
-childEdges p = map (,p,ChildOf)
+-- | create a marriage node and its context from the husbad wife and
+--   children in the record
+marriage :: (Monad m, Applicative m)
+         => ByteString 
+         -> ByteString
+         -> [ByteString]
+         -> KinGlowT m (Context NodeType RelType)
+marriage h w cs = f <$> nodeId h <*> nodeId w <*> childids <*> getmid
+  where
+    getmid = nodeId $ "MARRIED|" <> h <> "|" <> w 
+    childids = mapM nodeId cs
+    f hid wid cids mid = (adjs, mid, Marr, [])
+      where
+        adjs = (Married,hid):(Married,wid):map (ChildOf,) cids
+       
+singleParent :: (Monad m, Applicative m)
+             => ByteString                -- ^ single parent ref
+             -> [ByteString]              -- ^ child refs
+             -> KinGlowT m [LEdge RelType] -- ^ edge collection
+singleParent p cs = f <$> nodeId p <*> mapM nodeId cs
+  where
+    f pid cids = map (,pid, ChildOf) cids

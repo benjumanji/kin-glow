@@ -1,23 +1,24 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections, OverloadedStrings #-}
 
 module KinGlow.Fgl.Individual
-  (insert, indiNode)
+  (update)
   where
 
 import Control.Applicative
-import qualified Data.ByteString.Char8 as C8
+import Control.Monad.IO.Class
 import Data.Graph.Inductive
+import Data.Maybe (fromMaybe)
+import Data.Text.Encoding
 import Text.Gedcom.Types
 import KinGlow.Fgl.Types
 
 
-insert :: DynGraph gr => KinGraph gr -> Gedcom -> KinGraph gr
-insert gr record = maybe gr f indi
+update :: (MonadIO m, Functor m, DynGraph gr) 
+       => KinGraph gr              -- ^ geneology to update
+       -> Gedcom                   -- ^ record to update
+       -> KinGlowT m (KinGraph gr) -- ^ updated geneology
+update gr (Gedcom (XRef xref) _ tree) = ((flip insNode gr) . (, Indi label)) <$> nodeId xref
   where
-    f = flip insNode gr
-    indi = indiNode record
-
-indiNode :: Gedcom -> Maybe UNode 
-indiNode (Gedcom (XRef xref) _ _) = (,()) <$> ref
-  where
-    ref = fst <$> C8.readInt (C8.tail xref)
+    tree' = rewriteTyped tree
+    label = maybe "Anon." (\(Name x _ _) -> decodeUtf8 x) $ name tree'
+    

@@ -4,56 +4,60 @@ module Main
   where
 
 import Control.Monad
+import Control.Monad.IO.Class
 import qualified Data.ByteString.Char8 as C8
 import Data.Graph.Inductive.Graph
 import Data.Graph.Inductive.PatriciaTree
 import Data.Graph.Inductive.Graphviz
+import Data.GraphViz hiding (empty)
+import Data.GraphViz.Attributes
+import Data.GraphViz.Attributes.Complete
+import Data.GraphViz.Printing hiding (empty)
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HS
 import Data.List (partition)
+import qualified Data.Text.Lazy as T
+import qualified Data.Text.Lazy.IO as T
 import Pipes
 import qualified Pipes.Prelude as P
-import qualified KinGlow.Individual as I
-import qualified KinGlow.Family as F
+import qualified KinGlow.Individual as IP
+import qualified KinGlow.Family as FP
 import qualified KinGlow.Fgl.Family as F
 import qualified KinGlow.Fgl.Individual as I
 import KinGlow.Fgl.Types
 import KinGlow.Pipes
 import System.IO
-import Text.Gedcom.Types
+import Text.Gedcom.Types hiding (name)
+
+-- #ff7f0e
+d3Orange :: Color
+d3Orange = RGB 255 127 14
+
+gvParams = nonClusteredParams
+    { isDirected = True
+    , globalAttributes = [GraphAttrs [Overlap (PrismOverlap Nothing), OutputOrder EdgesFirst]]
+    , fmtNode = \(_, x) -> case x of
+                          Indi name -> [textLabel (T.fromStrict name), shape DoubleCircle]
+                          Marr -> [textLabel "Family", shape Pentagon]
+    , fmtEdge = \(_, _, x) -> case x of
+                                  Married -> [textLabel "Married"]  
+                                  ChildOf -> [textLabel "Child of"]  
+    }
 
 main :: IO ()
 main = do
-    (nodes, gnodes) <- withFile "../gedcom/test2.ged" ReadMode f
-    gfull <- withFile "../gedcom/test2.ged" ReadMode (g nodes gnodes)
-    putStr . graphviz' $ gfull
+    gr <- graphFromFile
+    T.putStr . printDotGraph . graphToDot gvParams $ gr
+
+graphFromFile :: IO (KinGraph Gr)
+graphFromFile = evalKinGlowT $ do 
+    h <- liftIO $ openFile "../gedcom/test2.ged" ReadMode
+    gnodes <- f h
+    liftIO $ hSeek h AbsoluteSeek 0
+    gfull <- g gnodes h
+    liftIO $ hClose h
+    return gfull
   where
-    -- e = return (empty :: KinGraph Gr)
     e = (empty :: KinGraph Gr)
---    f h = P.foldM inslog e return (gedcom h >-> P.filter I.isIndi)
-    f h = P.foldM insTrack (return (HS.empty,e)) return (gedcom h >-> P.filter I.isIndi)
-    g hs gr h = P.foldM inslog (return (hs, gr)) (return . snd) (gedcom h >-> P.filter F.isFam)
-
-    insTrack (hs,gr) record = maybe (print record >> return (hs,gr)) (\(x,_) -> return (HS.insert x hs, gr')) node
-      where
-        node = I.indiNode record
-        gr' = I.insert gr record
-
-    inslog (hs, gr) record = do
-        let edges = F.famEdges record
-            (accepts, rejects) = check hs edges
-        unless (null rejects) (print rejects)
-        return $ (hs, F.insert gr record)
-
-
-check :: HashSet Node -> [LEdge RelType] -> ([LEdge RelType], [LEdge RelType])
-check hs = partition f
-  where 
-    f (x,y,_) = HS.member x hs && HS.member y hs
-
-
-printRec :: Gedcom -> IO Gedcom
--- printRec r@(Gedcom (XRef x) _ _) | x == "I1037" = print "found" >> return r
-printRec r@(Gedcom (XRef x) _ _) = C8.putStrLn x >> return r
--- printRec r = return r
-
+    f h = P.foldM I.update (return e) return (gedcom h >-> P.filter IP.isIndi)
+    g gr h = P.foldM F.update (return gr) return (gedcom h >-> P.filter FP.isFam)
