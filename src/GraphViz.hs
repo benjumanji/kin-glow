@@ -13,9 +13,6 @@ import Data.GraphViz hiding (empty)
 import Data.GraphViz.Attributes
 import Data.GraphViz.Attributes.Complete
 import Data.GraphViz.Printing hiding (empty)
-import Data.HashSet (HashSet)
-import qualified Data.HashSet as HS
-import Data.List (partition)
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.IO as T
 import Pipes
@@ -33,10 +30,13 @@ import Text.Gedcom.Types hiding (name)
 d3Orange :: Color
 d3Orange = RGB 255 127 14
 
-gvParams = nonClusteredParams
+gtgParams = nonClusteredParams 
     { isDirected = True
-    , globalAttributes = [GraphAttrs [Overlap (PrismOverlap Nothing), OutputOrder EdgesFirst]]
-    , fmtNode = \(_, x) -> case x of
+    , globalAttributes = [GraphAttrs [Overlap (PrismOverlap Nothing), OutputOrder EdgesFirst, Layout Sfdp]]
+    } 
+
+gvParams = gtgParams 
+    { fmtNode = \(_, x) -> case x of
                           Indi name -> [textLabel (T.fromStrict name), shape DoubleCircle]
                           Marr -> [textLabel "Family", shape Pentagon]
     , fmtEdge = \(_, _, x) -> case x of
@@ -47,7 +47,9 @@ gvParams = nonClusteredParams
 main :: IO ()
 main = do
     gr <- graphFromFile
-    T.putStr . printDotGraph . graphToDot gvParams $ gr
+    withPosition <- graphToGraph gtgParams gr
+    return ()
+    -- T.putStr . printDotGraph . graphToDot gvParams $ gr
 
 graphFromFile :: IO (KinGraph Gr)
 graphFromFile = evalKinGlowT $ do 

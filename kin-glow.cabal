@@ -22,7 +22,9 @@ library
                        KinGlow.Family,
                        KinGlow.Individual,
                        KinGlow.Pipes,
-                       KinGlow.Types
+                       KinGlow.Types,
+                       KinGlow.Tile.Math,
+                       KinGlow.DeepZoom
               
   build-depends:       base >=4.6 && <4.7,
                        aeson,
@@ -30,6 +32,8 @@ library
                        bytestring,
                        fgl,
                        gedcom,
+                       graphviz,
+                       hashable,
                        lens,
                        pipes,
                        pipes-attoparsec,
